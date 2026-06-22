@@ -40,7 +40,7 @@ jobs:
         env:
           HR_TEAMS_WEBHOOK_URL: ${{ secrets.HR_TEAMS_WEBHOOK_URL }}
           HR_TEAMS_WEBHOOK_URL_EXTRA: ${{ secrets.HR_TEAMS_WEBHOOK_URL_EXTRA }}
-          AI_PROVIDER: ${{ vars.AI_PROVIDER || 'openai' }}
+          AI_PROVIDER: ${{ vars.AI_PROVIDER || 'gemini' }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
