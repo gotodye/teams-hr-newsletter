@@ -21,7 +21,7 @@ if sys.platform == "win32":
 
 def test_gemini() -> bool:
     key = os.environ.get("GEMINI_API_KEY", "").strip()
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    model = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
     provider = os.environ.get("AI_PROVIDER", "gemini").lower()
 
     print(f"AI_PROVIDER={provider}")

@@ -102,7 +102,7 @@ def _extract_gemini_text(data: dict) -> str:
 
 
 def _gemini_generation_config() -> dict:
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    model = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
     config: dict = {
         "temperature": 0.7,
         "maxOutputTokens": 2048,
@@ -118,7 +118,7 @@ def _call_gemini(prompt: str) -> str:
     if not api_key:
         raise RuntimeError("需要設定 GEMINI_API_KEY 才能生成 HR 快報")
 
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    model = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{model}:generateContent?key={api_key}"

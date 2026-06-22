@@ -51,7 +51,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           AI_PROVIDER: ${{ vars.AI_PROVIDER || 'gemini' }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.0-flash' }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash' }}
         run: |
           if [ "$AI_PROVIDER" != "gemini" ]; then
             echo "Skipping Gemini preflight (AI_PROVIDER=$AI_PROVIDER)"
@@ -62,7 +62,7 @@ jobs:
           import requests
 
           key = os.environ.get("GEMINI_API_KEY", "")
-          model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+          model = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
           if not key:
               print("::error::GEMINI_API_KEY is empty")
               sys.exit(1)
@@ -92,6 +92,6 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.0-flash' }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash' }}
           TEAMS_WEBHOOK_FORMAT: ${{ vars.TEAMS_WEBHOOK_FORMAT || 'auto' }}
         run: python hr_main.py
