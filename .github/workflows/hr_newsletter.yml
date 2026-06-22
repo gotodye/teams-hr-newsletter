@@ -47,6 +47,43 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Preflight Gemini API
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          AI_PROVIDER: ${{ vars.AI_PROVIDER || 'gemini' }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.0-flash' }}
+        run: |
+          if [ "$AI_PROVIDER" != "gemini" ]; then
+            echo "Skipping Gemini preflight (AI_PROVIDER=$AI_PROVIDER)"
+            exit 0
+          fi
+          python - <<'PY'
+          import os, sys
+          import requests
+
+          key = os.environ.get("GEMINI_API_KEY", "")
+          model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+          if not key:
+              print("::error::GEMINI_API_KEY is empty")
+              sys.exit(1)
+
+          url = (
+              f"https://generativelanguage.googleapis.com/v1beta/models/"
+              f"{model}:generateContent?key={key}"
+          )
+          payload = {
+              "contents": [{"parts": [{"text": "Reply with OK only."}]}],
+              "generationConfig": {"maxOutputTokens": 16, "temperature": 0},
+          }
+          r = requests.post(url, json=payload, timeout=30)
+          print(f"Gemini preflight status: {r.status_code}")
+          print(r.text[:800])
+          if not r.ok:
+              print("::error::Gemini API preflight failed — check GEMINI_API_KEY and GEMINI_MODEL")
+              sys.exit(1)
+          print("Gemini preflight OK")
+          PY
+
       - name: Generate and send HR newsletter to Teams
         env:
           HR_TEAMS_WEBHOOK_URL: ${{ secrets.HR_TEAMS_WEBHOOK_URL }}

@@ -105,12 +105,11 @@ def _gemini_generation_config() -> dict:
     model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
     config: dict = {
         "temperature": 0.7,
-        "maxOutputTokens": 1024,
+        "maxOutputTokens": 2048,
     }
+    # thinkingConfig is only valid on Gemini 3.x; omit for 2.x to avoid 400 errors.
     if model.startswith("gemini-3"):
         config["thinkingConfig"] = {"thinkingLevel": "minimal"}
-    else:
-        config["thinkingConfig"] = {"thinkingBudget": 0}
     return config
 
 
@@ -153,7 +152,7 @@ def generate_hr_newsletter(today: date) -> tuple[str, str, list[HRArticle]]:
     source_block = format_sources_for_prompt(articles)
     prompt = _build_user_prompt(today, source_block, articles)
 
-    provider = os.environ.get("AI_PROVIDER", "openai").lower()
+    provider = os.environ.get("AI_PROVIDER", "gemini").lower()
     if provider == "gemini":
         newsletter = _call_gemini(prompt)
     else:
