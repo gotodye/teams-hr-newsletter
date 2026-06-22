@@ -1,0 +1,49 @@
+name: HR Strategic Newsletter
+
+on:
+  schedule:
+    # Taiwan time daily 07:00 (UTC+8 → UTC 23:00 previous day)
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+
+jobs:
+  send-hr-newsletter:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify HR webhook secret
+        env:
+          HR_TEAMS_WEBHOOK_URL: ${{ secrets.HR_TEAMS_WEBHOOK_URL }}
+        run: |
+          if [ -z "$HR_TEAMS_WEBHOOK_URL" ]; then
+            echo "::error::HR_TEAMS_WEBHOOK_URL secret is not set."
+            echo "Add the Power Automate HTTP POST URL in"
+            echo "Settings → Secrets and variables → Actions → New repository secret."
+            exit 1
+          fi
+          if ! echo "$HR_TEAMS_WEBHOOK_URL" | grep -q 'powerplatform.com\|powerautomate'; then
+            echo "::error::HR_TEAMS_WEBHOOK_URL must be a Power Automate webhook URL, not a Teams channel webhook."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate and send HR newsletter to Teams
+        env:
+          HR_TEAMS_WEBHOOK_URL: ${{ secrets.HR_TEAMS_WEBHOOK_URL }}
+          HR_TEAMS_WEBHOOK_URL_EXTRA: ${{ secrets.HR_TEAMS_WEBHOOK_URL_EXTRA }}
+          AI_PROVIDER: ${{ vars.AI_PROVIDER || 'openai' }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.0-flash' }}
+          TEAMS_WEBHOOK_FORMAT: ${{ vars.TEAMS_WEBHOOK_FORMAT || 'auto' }}
+        run: python hr_main.py
