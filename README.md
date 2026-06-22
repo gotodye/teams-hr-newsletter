@@ -1,15 +1,16 @@
 # HR 戰略決策快報
 
-每日 **07:00（台灣時間）** 自動抓取 HBR、Josh Bersin、McKinsey 等來源，生成 CHRO 風格快報（350–400 字），透過 **Power Automate** 發送至 Microsoft Teams **私訊**。
+每日 **06:00（台灣時間）** 由 **Power Automate 排程**觸發，自動抓取 HBR、Josh Bersin、McKinsey 等來源，生成 CHRO 風格快報（350–400 字），透過 **Power Automate** 發送至 Microsoft Teams **私訊**。
 
 > 晨間推播機器人已獨立至 [teams-morning-bot](https://github.com/gotodye/teams-morning-bot)。
 
 ## 功能
 
 - 抓取全球 HR / 領導力媒體 RSS（近 48 小時）
-- AI 生成三段式 CHRO 快報（OpenAI 或 Gemini）
+- AI 生成三段式 CHRO 快報（預設 Gemini）
 - 透過 Power Automate Adaptive Card 發送至指定收件人
-- GitHub Actions 每日排程 + 手動觸發
+- **Power Automate 06:00 準時觸發**（不依賴 GitHub cron）
+- GitHub Actions 手動觸發仍可用
 
 ## 專案結構
 
@@ -19,7 +20,8 @@ teams-hr-newsletter/
 ├── hr_newsletter.py           # CHRO 快報 AI 生成
 ├── hr_sources.py              # RSS 來源抓取
 ├── send_hr_test_now.py        # 立即測試發送
-├── docs/hr_teams_dm_setup.md  # Power Automate 私訊設定教學
+├── docs/hr_teams_dm_setup.md      # Power Automate 私訊設定
+├── docs/hr_pa_scheduler_setup.md # 06:00 排程觸發 GitHub
 └── .github/workflows/hr_newsletter.yml
 ```
 
@@ -27,7 +29,8 @@ teams-hr-newsletter/
 
 ### 1. Power Automate 設定
 
-依 [`docs/hr_teams_dm_setup.md`](docs/hr_teams_dm_setup.md) 建立「Webhook → 個人聊天」流程，取得 `HR_TEAMS_WEBHOOK_URL`（**不可**使用 Teams 頻道 Webhook，否則會誤發到群組）。
+- **發送私訊**：[`docs/hr_teams_dm_setup.md`](docs/hr_teams_dm_setup.md)（`HR Newsletter Test to Me`）
+- **每日 06:00 排程**：[`docs/hr_pa_scheduler_setup.md`](docs/hr_pa_scheduler_setup.md)（`HR Newsletter Scheduler 06:00`）
 
 ### 2. 本機設定
 
@@ -66,7 +69,7 @@ python hr_main.py
 
 Workflow 會在 secret 未設定或誤用頻道 webhook 時**直接失敗**，避免誤發到 HK-ALL 等群組。
 
-排程：`0 23 * * *` UTC = 台灣時間 **07:00**。
+**排程**：由 Power Automate 每天 **06:00（台灣時間）** 觸發 `repository_dispatch`（見 `docs/hr_pa_scheduler_setup.md`）。GitHub **無 cron**。
 
 ## 多位收件人
 
