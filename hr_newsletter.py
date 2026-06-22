@@ -82,6 +82,38 @@ def _call_openai(prompt: str) -> str:
     return response.json()["choices"][0]["message"]["content"].strip()
 
 
+def _extract_gemini_text(data: dict) -> str:
+    candidate = data.get("candidates", [{}])[0]
+    finish_reason = candidate.get("finishReason")
+    if finish_reason == "MAX_TOKENS":
+        logger.warning("Gemini response truncated (finishReason=MAX_TOKENS)")
+
+    parts = candidate.get("content", {}).get("parts", [])
+    text = "".join(
+        part["text"]
+        for part in parts
+        if part.get("text") and not part.get("thought")
+    ).strip()
+    if not text:
+        raise RuntimeError(
+            f"Gemini returned empty text (finishReason={finish_reason})"
+        )
+    return text
+
+
+def _gemini_generation_config() -> dict:
+    model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    config: dict = {
+        "temperature": 0.7,
+        "maxOutputTokens": 1024,
+    }
+    if model.startswith("gemini-3"):
+        config["thinkingConfig"] = {"thinkingLevel": "minimal"}
+    else:
+        config["thinkingConfig"] = {"thinkingBudget": 0}
+    return config
+
+
 def _call_gemini(prompt: str) -> str:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -92,27 +124,20 @@ def _call_gemini(prompt: str) -> str:
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{model}:generateContent?key={api_key}"
     )
+    combined = f"{CHRO_SYSTEM_PROMPT}\n\n{prompt}"
     response = requests.post(
         url,
         headers={"Content-Type": "application/json"},
         json={
-            "contents": [
-                {
-                    "parts": [
-                        {"text": CHRO_SYSTEM_PROMPT},
-                        {"text": prompt},
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.7,
-                "maxOutputTokens": 900,
-            },
+            "contents": [{"parts": [{"text": combined}]}],
+            "generationConfig": _gemini_generation_config(),
         },
         timeout=60,
     )
-    response.raise_for_status()
-    return response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+    if not response.ok:
+        logger.error("Gemini API error %s: %s", response.status_code, response.text[:500])
+        response.raise_for_status()
+    return _extract_gemini_text(response.json())
 
 
 def _extract_subject(newsletter: str) -> str:
