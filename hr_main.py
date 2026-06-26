@@ -14,6 +14,7 @@ import requests
 from dotenv import load_dotenv
 
 from hr_newsletter import generate_hr_newsletter
+from hr_sources import HRArticle
 
 load_dotenv()
 
@@ -51,34 +52,66 @@ def _resolve_webhook_format(webhook_url: str) -> str:
     return "adaptive"
 
 
-def _build_adaptive_card(title: str, subtitle: str, message: str) -> dict:
-    return {
+_BUTTON_TITLE_MAX = 45
+
+
+def _article_button_title(article: HRArticle) -> str:
+    title = article.title.strip()
+    if len(title) > _BUTTON_TITLE_MAX:
+        title = title[: _BUTTON_TITLE_MAX - 1].rstrip() + "…"
+    return f"{article.source} · {title}"
+
+
+def _build_adaptive_card(
+    title: str,
+    subtitle: str,
+    message: str,
+    articles: list[HRArticle] | None = None,
+) -> dict:
+    body = [
+        {
+            "type": "TextBlock",
+            "text": title,
+            "weight": "Bolder",
+            "size": "Large",
+            "wrap": True,
+        },
+        {
+            "type": "TextBlock",
+            "text": subtitle,
+            "isSubtle": True,
+            "spacing": "Small",
+            "wrap": True,
+        },
+        {
+            "type": "TextBlock",
+            "text": message,
+            "wrap": True,
+            "spacing": "Medium",
+        },
+    ]
+
+    card: dict = {
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
         "type": "AdaptiveCard",
         "version": "1.5",
-        "body": [
-            {
-                "type": "TextBlock",
-                "text": title,
-                "weight": "Bolder",
-                "size": "Large",
-                "wrap": True,
-            },
-            {
-                "type": "TextBlock",
-                "text": subtitle,
-                "isSubtle": True,
-                "spacing": "Small",
-                "wrap": True,
-            },
-            {
-                "type": "TextBlock",
-                "text": message,
-                "wrap": True,
-                "spacing": "Medium",
-            },
-        ],
+        "body": body,
     }
+
+    if articles:
+        actions = [
+            {
+                "type": "Action.OpenUrl",
+                "title": _article_button_title(article),
+                "url": article.url,
+            }
+            for article in articles[:4]
+            if article.url
+        ]
+        if actions:
+            card["actions"] = actions
+
+    return card
 
 
 def _wrap_adaptive_card(card: dict) -> dict:
@@ -119,7 +152,12 @@ def get_hr_webhook_urls() -> list[str]:
     return urls
 
 
-def send_hr_newsletter_to_teams(newsletter: str, subject: str, today: date) -> None:
+def send_hr_newsletter_to_teams(
+    newsletter: str,
+    subject: str,
+    today: date,
+    articles: list[HRArticle] | None = None,
+) -> None:
     webhook_urls = get_hr_webhook_urls()
     if not webhook_urls:
         raise RuntimeError(
@@ -138,7 +176,7 @@ def send_hr_newsletter_to_teams(newsletter: str, subject: str, today: date) -> N
     if webhook_format == "simple":
         payload = {"text": f"**{title}**\n_{subtitle}_\n\n{newsletter}"}
     else:
-        card = _build_adaptive_card(title, subtitle, newsletter)
+        card = _build_adaptive_card(title, subtitle, newsletter, articles)
         payload = _wrap_adaptive_card(card)
         payload["title"] = title
         payload["text"] = newsletter
@@ -168,7 +206,7 @@ def main() -> int:
     try:
         newsletter, subject, articles = generate_hr_newsletter(today)
         logger.info("Sources used: %s", ", ".join(article.source for article in articles))
-        send_hr_newsletter_to_teams(newsletter, subject, today)
+        send_hr_newsletter_to_teams(newsletter, subject, today, articles)
         return 0
     except Exception:
         logger.exception("HR newsletter failed")
