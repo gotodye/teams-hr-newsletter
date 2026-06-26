@@ -1,12 +1,8 @@
 name: HR Strategic Newsletter
 
-# Daily 06:00 Taiwan — GitHub Actions schedule (no Power Automate Premium required).
-# See docs/hr_schedule_setup.md. repository_dispatch kept for optional manual triggers.
-
+# Scheduled by cron-job.org at 06:00 Taipei daily (cloud, no PC required).
+# See docs/cloud_schedule.md
 on:
-  schedule:
-    - cron: "0 6 * * *"
-      timezone: Asia/Taipei
   workflow_dispatch:
   repository_dispatch:
     types: [hr-newsletter-daily]
