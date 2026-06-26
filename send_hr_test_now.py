@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -18,6 +19,30 @@ if sys.platform == "win32":
 
 from hr_main import get_hr_webhook_urls, get_today, send_hr_newsletter_to_teams
 from hr_newsletter import generate_hr_newsletter
+from hr_sources import HRArticle
+
+TZ_TAIWAN = ZoneInfo("Asia/Taipei")
+
+SAMPLE_ARTICLES = [
+    HRArticle(
+        title="3 Forces Are Redefining the Transition from Manager to Leader",
+        url="https://hbr.org/2026/06/3-forces-are-redefining-the-transition-from-manager-to-leader",
+        published=datetime.now(TZ_TAIWAN),
+        source="HBR Leadership",
+    ),
+    HRArticle(
+        title="Prevent Team Friction from Turning into Dysfunction",
+        url="https://hbr.org/2026/06/prevent-team-friction-from-turning-into-dysfunction",
+        published=datetime.now(TZ_TAIWAN),
+        source="HBR Leadership",
+    ),
+    HRArticle(
+        title="The Josh Bersin Institute, HR 2030, and the Global HR Excellence Certification",
+        url="https://joshbersin.com/2026/06/the-josh-bersin-institute-hr-2030-and-the-global-hr-excellence-certification/",
+        published=datetime.now(TZ_TAIWAN),
+        source="Josh Bersin",
+    ),
+]
 
 SAMPLE_NEWSLETTER = """主旨：【HR 戰略快報】主管斷層 ✕ 守住團隊韌性與人效
 
@@ -31,10 +56,10 @@ HBR 近期連發研究指出，主管邁向領導者的轉型正面臨 AI 治理
 建議我們公司可以嘗試：為高潛主管設計「AI 時代領導轉型工作坊」，聚焦決策授權與跨文化協作。我正帶領團隊規劃「團隊摩擦健檢」機制，透過季度 360° 即時回饋，將衝突轉化為創新動能。
 
 ---
-📌 今日趨勢/社群熱議原文連結：
-- https://hbr.org/2026/06/3-forces-are-redefining-the-transition-from-manager-to-leader
-- https://hbr.org/2026/06/prevent-team-friction-from-turning-into-dysfunction
-- https://joshbersin.com/2026/06/the-josh-bersin-institute-hr-2030-and-the-global-hr-excellence-certification/"""
+📌 今日參考來源（僅列來源與標題，勿輸出網址）：
+- HBR Leadership — 3 Forces Are Redefining the Transition from Manager to Leader
+- HBR Leadership — Prevent Team Friction from Turning into Dysfunction
+- Josh Bersin — The Josh Bersin Institute, HR 2030, and the Global HR Excellence Certification"""
 
 
 def main() -> int:
@@ -53,6 +78,8 @@ def main() -> int:
     use_ai = os.environ.get("USE_AI", "").lower() in ("1", "true", "yes")
     api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("GEMINI_API_KEY")
 
+    articles: list[HRArticle] = SAMPLE_ARTICLES
+
     if use_ai and api_key:
         print("Generating live HR newsletter with AI...")
         try:
@@ -62,14 +89,16 @@ def main() -> int:
             print(f"AI failed ({exc}), using sample newsletter.")
             newsletter = SAMPLE_NEWSLETTER
             subject = "【HR 戰略快報】主管斷層 ✕ 守住團隊韌性與人效"
+            articles = SAMPLE_ARTICLES
     else:
         print("Sending sample HR newsletter (set USE_AI=true + OPENAI_API_KEY for live AI).")
         newsletter = SAMPLE_NEWSLETTER
         subject = "【HR 戰略快報】主管斷層 ✕ 守住團隊韌性與人效"
+        articles = SAMPLE_ARTICLES
 
     print("Sending to Teams...")
     try:
-        send_hr_newsletter_to_teams(newsletter, subject, today)
+        send_hr_newsletter_to_teams(newsletter, subject, today, articles)
         print("SUCCESS — check Teams chat with Flow bot.")
         return 0
     except Exception as exc:
