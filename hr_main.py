@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import requests
 from dotenv import load_dotenv
 
-from hr_newsletter import generate_hr_newsletter
+from hr_newsletter import REFERENCE_ARTICLE_LIMIT, generate_hr_newsletter
 from hr_sources import HRArticle
 
 load_dotenv()
@@ -59,7 +59,7 @@ def _article_button_title(article: HRArticle) -> str:
     title = article.title.strip()
     if len(title) > _BUTTON_TITLE_MAX:
         title = title[: _BUTTON_TITLE_MAX - 1].rstrip() + "…"
-    return f"{article.source} · {title}"
+    return title
 
 
 def _build_adaptive_card(
@@ -105,7 +105,7 @@ def _build_adaptive_card(
                 "title": _article_button_title(article),
                 "url": article.url,
             }
-            for article in articles[:4]
+            for article in articles[:REFERENCE_ARTICLE_LIMIT]
             if article.url
         ]
         if actions:
