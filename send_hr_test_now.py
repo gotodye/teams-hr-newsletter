@@ -56,10 +56,10 @@ HBR 近期連發研究指出，主管邁向領導者的轉型正面臨 AI 治理
 建議我們公司可以嘗試：為高潛主管設計「AI 時代領導轉型工作坊」，聚焦決策授權與跨文化協作。我正帶領團隊規劃「團隊摩擦健檢」機制，透過季度 360° 即時回饋，將衝突轉化為創新動能。
 
 ---
-📌 今日參考來源（僅列來源與標題，勿輸出網址）：
-- HBR Leadership — 3 Forces Are Redefining the Transition from Manager to Leader
-- HBR Leadership — Prevent Team Friction from Turning into Dysfunction
-- Josh Bersin — The Josh Bersin Institute, HR 2030, and the Global HR Excellence Certification"""
+📌 今日參考來源（僅列文章標題，勿輸出網址）：
+- 3 Forces Are Redefining the Transition from Manager to Leader
+- Prevent Team Friction from Turning into Dysfunction
+- The Josh Bersin Institute, HR 2030, and the Global HR Excellence Certification"""
 
 
 def main() -> int:
