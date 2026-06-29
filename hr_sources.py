@@ -22,6 +22,7 @@ HR_FEEDS: dict[str, str] = {
     "Josh Bersin": "https://joshbersin.com/feed/",
     "HBR Leadership": "https://hbr.org/topic/subject/leadership.rss",
     "McKinsey People": "https://www.mckinsey.com/featured-insights/rss",
+    "經理人": "https://www.managertoday.com.tw/rss",
 }
 
 HR_TOPIC_FEEDS: dict[str, str] = {
@@ -30,7 +31,58 @@ HR_TOPIC_FEEDS: dict[str, str] = {
         "q=human+resources+OR+workplace+culture+OR+leadership+when:2d"
         "&hl=en-US&gl=US&ceid=US:en"
     ),
+    "Google News 台灣": (
+        "https://news.google.com/rss/search?"
+        "q=%E4%BA%BA%E8%B3%87+OR+%E9%A0%98%E5%B0%8E%E5%8A%9B+OR+%E8%81%B7%E5%A0%B4+when:2d"
+        "&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+    ),
 }
+
+
+NEWS_AGGREGATOR_SOURCES = frozenset({"Google News HR", "Google News 台灣"})
+
+# All feeds — admin, compliance, or clearly off-topic for CHRO briefings.
+GLOBAL_TITLE_EXCLUDE: tuple[str, ...] = (
+    "懶人包",
+    "勞基法",
+    "勞健保",
+    "薪資申報",
+    "考勤",
+    "加班費",
+    "特休計算",
+    "函釋",
+    "最高罰",
+    "罰款",
+    "新制一次看",
+    "新制將上路",
+    "法規正式上路",
+    "世界盃",
+    "FIFA",
+    "駕照大改革",
+    "醫療補助升級",
+    "FMLA",
+    "EEOC",
+    "GINA",
+)
+
+# News aggregators — repetitive policy / lawsuit headlines.
+AGGREGATOR_TITLE_EXCLUDE: tuple[str, ...] = (
+    "職場霸凌",
+    "職安法",
+    "職災",
+    "勞檢",
+    "申訴",
+    "起訴",
+    "罰鍰",
+    "違反勞基法",
+    "討論牆",
+    "涉職場霸凌",
+)
+
+_TITLE_EXCLUDE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"罰\d+萬"),
+    re.compile(r"新制[｜|]"),
+)
 
 
 @dataclass(frozen=True)
@@ -95,6 +147,44 @@ def _within_lookback(item: HRArticle, cutoff: datetime) -> bool:
     return item.published >= cutoff
 
 
+def _title_exclusion_reason(title: str, source: str) -> str | None:
+    text = title.strip()
+    if not text:
+        return "empty"
+
+    lowered = text.lower()
+    for keyword in GLOBAL_TITLE_EXCLUDE:
+        if keyword.lower() in lowered or keyword in text:
+            return keyword
+
+    for pattern in _TITLE_EXCLUDE_PATTERNS:
+        if pattern.search(text):
+            return pattern.pattern
+
+    if source in NEWS_AGGREGATOR_SOURCES:
+        for keyword in AGGREGATOR_TITLE_EXCLUDE:
+            if keyword in text:
+                return keyword
+
+    return None
+
+
+def _filter_by_title(articles: Iterable[HRArticle], source: str) -> list[HRArticle]:
+    kept: list[HRArticle] = []
+    for article in articles:
+        reason = _title_exclusion_reason(article.title, source)
+        if reason:
+            logger.info(
+                "Excluded [%s] %s (keyword: %s)",
+                source,
+                article.title[:80],
+                reason,
+            )
+            continue
+        kept.append(article)
+    return kept
+
+
 def _dedupe_articles(articles: Iterable[HRArticle]) -> list[HRArticle]:
     seen_urls: set[str] = set()
     seen_titles: set[str] = set()
@@ -125,8 +215,9 @@ def fetch_hr_articles(
         try:
             fetched = _fetch_rss(feed_url, source)
             recent = [item for item in fetched if _within_lookback(item, cutoff)]
+            recent = _filter_by_title(recent, source)
             collected.extend(recent)
-            logger.info("Fetched %s recent items from %s", len(recent), source)
+            logger.info("Kept %s items from %s after title filter", len(recent), source)
         except Exception:
             logger.warning("Failed to fetch feed: %s", source, exc_info=True)
 
