@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from datetime import date
+from datetime import date, timedelta
 
 import requests
 
@@ -16,6 +16,17 @@ logger = logging.getLogger(__name__)
 # Must match adaptive-card button count in hr_main.py
 REFERENCE_ARTICLE_LIMIT = 3
 
+STRATEGIC_THEMES: tuple[str, ...] = (
+    "打造雇主品牌",
+    "增加員工滿意度",
+    "建構員工安全（心理安全、職場安全感，非單純法規合規）",
+)
+
+MAX_THEME_USES_PER_WEEK = 2
+COMPOSITE_WEEKLY_FOCUS = (
+    "綜合三項戰略主題（雇主品牌、員工滿意度、員工安全均衡帶入）"
+)
+
 CHRO_SYSTEM_PROMPT = """你是一位具備 20 年以上經驗、擁有國際視野的資深戰略人資長（CHRO）。
 你正在為公司執行長撰寫每日專屬的【HR 戰略決策快報】Newsletter。
 
@@ -25,6 +36,7 @@ CHRO_SYSTEM_PROMPT = """你是一位具備 20 年以上經驗、擁有國際視�
 - 語氣專業、策略導向、溫和但具穿透力
 - 絕對不要提及考勤、勞健保、薪資申報等行政瑣事
 - 融入重視人才、新世代即時回饋、心理安全感、人效 ROI 等觀念
+- 內容需呼應公司 HR 戰略主題：雇主品牌、員工滿意度、員工安全
 - 使用繁體中文
 """
 
@@ -48,16 +60,63 @@ def _strip_raw_urls(text: str) -> str:
     return cleaned.rstrip()
 
 
+def _week_start_monday(today: date) -> date:
+    return today - timedelta(days=today.weekday())
+
+
+def _pick_theme_for_day(day: date, usage: dict[str, int]) -> str | None:
+    """Pick a theme that has not exceeded the weekly cap, or None if all are capped."""
+    start = (day.toordinal() + day.weekday()) % len(STRATEGIC_THEMES)
+    for offset in range(len(STRATEGIC_THEMES)):
+        theme = STRATEGIC_THEMES[(start + offset) % len(STRATEGIC_THEMES)]
+        if usage[theme] < MAX_THEME_USES_PER_WEEK:
+            return theme
+    return None
+
+
+def _theme_usage_before(today: date) -> dict[str, int]:
+    """Count how many times each theme was the daily focus earlier this week."""
+    usage = {theme: 0 for theme in STRATEGIC_THEMES}
+    week_start = _week_start_monday(today)
+    for offset in range((today - week_start).days):
+        day = week_start + timedelta(days=offset)
+        theme = _pick_theme_for_day(day, usage)
+        if theme:
+            usage[theme] += 1
+    return usage
+
+
+def focus_theme_for_date(today: date) -> str:
+    """Return today's focus theme; each theme appears at most twice per ISO week."""
+    usage = _theme_usage_before(today)
+    theme = _pick_theme_for_day(today, usage)
+    return theme if theme else COMPOSITE_WEEKLY_FOCUS
+
+
 def _build_user_prompt(today: date, source_block: str, articles: list[HRArticle]) -> str:
     source_ref_lines = _format_source_ref_lines(articles)
+    theme_lines = "\n".join(f"- {theme}" for theme in STRATEGIC_THEMES)
+    focus_theme = focus_theme_for_date(today)
+    weekly_cap_note = (
+        f"- 同一戰略主題每週最多作為「今日切入角度」{MAX_THEME_USES_PER_WEEK} 次；"
+        f"若今日為綜合角度，請三項均衡帶入，勿偏重單一主題"
+        if focus_theme == COMPOSITE_WEEKLY_FOCUS
+        else f"- 同一戰略主題每週最多作為「今日切入角度」{MAX_THEME_USES_PER_WEEK} 次"
+    )
 
     return f"""今日日期：{today.isoformat()}
 
 以下是系統抓取的全球 HR / 管理媒體與社群趨勢素材：
 {source_block}
 
+公司長期 HR 戰略主題（請在洞察與對策中呼應，至少連結其中一項）：
+{theme_lines}
+今日建議切入角度：{focus_theme}
+{weekly_cap_note}
+
 請嚴格依照以下格式輸出（不要加任何前言或結語）：
 - 連結將由系統以 Teams 按鈕呈現，請勿在本文輸出任何 http/https 網址
+- 「員工安全」指心理安全、信任與可發聲的職場環境，勿寫成勞檢或工安罰則新聞
 
 主旨：【HR 戰略快報】[今日痛點關鍵字] ✕ [預期帶來的商業效益]
 
