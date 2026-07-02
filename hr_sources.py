@@ -28,12 +28,16 @@ HR_FEEDS: dict[str, str] = {
 HR_TOPIC_FEEDS: dict[str, str] = {
     "Google News HR": (
         "https://news.google.com/rss/search?"
-        "q=human+resources+OR+workplace+culture+OR+leadership+when:2d"
+        "q=human+resources+OR+workplace+culture+OR+leadership+OR+employer+brand"
+        "+OR+employee+engagement+OR+employee+satisfaction+OR+psychological+safety"
+        "+OR+workplace+safety+when:2d"
         "&hl=en-US&gl=US&ceid=US:en"
     ),
     "Google News 台灣": (
         "https://news.google.com/rss/search?"
-        "q=%E4%BA%BA%E8%B3%87+OR+%E9%A0%98%E5%B0%8E%E5%8A%9B+OR+%E8%81%B7%E5%A0%B4+when:2d"
+        "q=%E4%BA%BA%E8%B3%87+OR+%E9%A0%98%E5%B0%8E%E5%8A%9B+OR+%E8%81%B7%E5%A0%B4"
+        "+OR+%E9%9B%87%E4%B8%BB%E5%93%81%E7%89%8C+OR+%E5%93%A1%E5%B7%A5%E6%BB%BF%E6%84%8F%E5%BA%A6"
+        "+OR+%E5%BF%83%E7%90%86%E5%AE%89%E5%85%A8+OR+%E5%93%A1%E5%B7%A5%E5%AE%89%E5%85%A8+when:2d"
         "&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
     ),
 }
