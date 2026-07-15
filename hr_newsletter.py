@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 import requests
@@ -27,12 +28,31 @@ COMPOSITE_WEEKLY_FOCUS = (
     "綜合三項戰略主題（雇主品牌、員工滿意度、員工安全均衡帶入）"
 )
 
+CASE_LINK_LIMIT = 2  # 國內 + 國外
+
+_CASE_LINKS_BLOCK = re.compile(
+    r"^CASE_LINKS:\s*\n(.*?)(?:\n---|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+_CASE_LINK_LINE = re.compile(
+    r"^(國內|國外)[｜|](.+?)[｜|](https?://\S+)\s*$",
+    re.MULTILINE,
+)
+
+
+@dataclass(frozen=True)
+class CaseLink:
+    region: str
+    title: str
+    url: str
+
+
 CHRO_SYSTEM_PROMPT = """你是一位具備 20 年以上經驗、擁有國際視野的資深戰略人資長（CHRO）。
 你正在為公司執行長撰寫每日專屬的【HR 戰略決策快報】Newsletter。
 
 寫作要求：
 - 嚴格依照指定三段式結構輸出
-- 正文（不含主旨與連結區）控制在 350-400 字
+- 正文（不含主旨、連結區與 CASE_LINKS）控制在 400-480 字
 - 語氣專業、策略導向、溫和但具穿透力
 - 絕對不要提及考勤、勞健保、薪資申報等行政瑣事
 - 融入重視人才、新世代即時回饋、心理安全感、人效 ROI 等觀念
@@ -58,6 +78,53 @@ def _strip_raw_urls(text: str) -> str:
     cleaned = re.sub(r"https?://\S+", "", text)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.rstrip()
+
+
+def _resolve_case_url(title: str, url: str, articles: list[HRArticle]) -> str:
+    url = url.strip()
+    if url.startswith("http"):
+        return url
+    title_key = title.strip().lower()
+    for article in articles:
+        if title_key in article.title.lower() or article.title.lower() in title_key:
+            return article.url
+    return url
+
+
+def _parse_case_links(raw: str, articles: list[HRArticle]) -> list[CaseLink]:
+    block = _CASE_LINKS_BLOCK.search(raw)
+    if not block:
+        return []
+
+    cases: list[CaseLink] = []
+    seen_urls: set[str] = set()
+    for match in _CASE_LINK_LINE.finditer(block.group(1)):
+        region, title, url = match.group(1), match.group(2).strip(), match.group(3).strip()
+        resolved = _resolve_case_url(title, url, articles)
+        if not resolved.startswith("http"):
+            logger.warning("Skipping case link without URL: %s / %s", region, title)
+            continue
+        url_key = resolved.split("?")[0].rstrip("/").lower()
+        if url_key in seen_urls:
+            continue
+        seen_urls.add(url_key)
+        cases.append(CaseLink(region=region, title=title, url=resolved))
+        if len(cases) >= CASE_LINK_LIMIT:
+            break
+    return cases
+
+
+def _remove_case_links_block(text: str) -> str:
+    cleaned = _CASE_LINKS_BLOCK.sub("", text)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
+def finalize_newsletter(raw: str, articles: list[HRArticle]) -> tuple[str, list[CaseLink]]:
+    """Strip machine-readable link blocks and accidental URLs from newsletter body."""
+    case_links = _parse_case_links(raw, articles)
+    body = _remove_case_links_block(raw)
+    body = _strip_raw_urls(body)
+    return body, case_links
 
 
 def _week_start_monday(today: date) -> date:
@@ -128,6 +195,14 @@ def _build_user_prompt(today: date, source_block: str, articles: list[HRArticle]
 
 3. 我們的行動對策（Actionable Advice）
 [1-2 點具體可落地建議，以「建議我們公司可以嘗試…」或「我正帶領團隊規劃…」開頭]
+【案例參考】（必填，各 1 則，每則 1-2 句：公司/組織＋做法＋可借鑑成效，勿寫網址）
+· 國內｜[台灣或亞太企業案例]
+· 國外｜[國際企業案例]
+
+CASE_LINKS:
+國內｜[案例來源文章標題]｜[必須從上方素材複製的完整 URL]
+國外｜[案例來源文章標題]｜[必須從上方素材複製的完整 URL]
+（CASE_LINKS 區塊由系統轉為 Teams 按鈕，勿出現在正文）
 
 ---
 📌 今日參考來源（僅列文章標題，勿輸出網址或 feed 名稱如 Google News HR）：
@@ -226,19 +301,23 @@ def _extract_subject(newsletter: str) -> str:
     return "【HR 戰略快報】"
 
 
-def generate_hr_newsletter(today: date) -> tuple[str, str, list[HRArticle]]:
-    """Return (newsletter_text, subject_line, source_articles)."""
+def generate_hr_newsletter(today: date) -> tuple[str, str, list[HRArticle], list[CaseLink]]:
+    """Return (newsletter_text, subject_line, source_articles, case_links)."""
     articles = fetch_hr_articles()
     source_block = format_sources_for_prompt(articles)
     prompt = _build_user_prompt(today, source_block, articles)
 
     provider = os.environ.get("AI_PROVIDER", "gemini").lower()
     if provider == "gemini":
-        newsletter = _call_gemini(prompt)
+        raw = _call_gemini(prompt)
     else:
-        newsletter = _call_openai(prompt)
+        raw = _call_openai(prompt)
 
-    newsletter = _strip_raw_urls(newsletter)
+    newsletter, case_links = finalize_newsletter(raw, articles)
     subject = _extract_subject(newsletter)
-    logger.info("HR newsletter generated (%s chars)", len(newsletter))
-    return newsletter, subject, articles
+    logger.info(
+        "HR newsletter generated (%s chars, %s case links)",
+        len(newsletter),
+        len(case_links),
+    )
+    return newsletter, subject, articles, case_links
