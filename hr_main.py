@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import requests
 from dotenv import load_dotenv
 
-from hr_newsletter import REFERENCE_ARTICLE_LIMIT, generate_hr_newsletter
+from hr_newsletter import REFERENCE_ARTICLE_LIMIT, CaseLink, generate_hr_newsletter
 from hr_sources import HRArticle
 
 load_dotenv()
@@ -62,11 +62,48 @@ def _article_button_title(article: HRArticle) -> str:
     return title
 
 
+def _case_button_title(case: CaseLink) -> str:
+    prefix = f"{case.region} · "
+    title = case.title.strip()
+    max_len = _BUTTON_TITLE_MAX - len(prefix)
+    if len(title) > max_len:
+        title = title[: max_len - 1].rstrip() + "…"
+    return f"{prefix}{title}"
+
+
+def _card_link_actions(
+    articles: list[HRArticle] | None,
+    case_links: list[CaseLink] | None,
+) -> list[dict]:
+    actions: list[dict] = []
+    seen_urls: set[str] = set()
+
+    def add_action(title: str, url: str) -> None:
+        url_key = url.split("?")[0].rstrip("/").lower()
+        if url_key in seen_urls:
+            return
+        seen_urls.add(url_key)
+        actions.append({"type": "Action.OpenUrl", "title": title, "url": url})
+
+    if articles:
+        for article in articles[:REFERENCE_ARTICLE_LIMIT]:
+            if article.url:
+                add_action(_article_button_title(article), article.url)
+
+    if case_links:
+        for case in case_links:
+            if case.url:
+                add_action(_case_button_title(case), case.url)
+
+    return actions
+
+
 def _build_adaptive_card(
     title: str,
     subtitle: str,
     message: str,
     articles: list[HRArticle] | None = None,
+    case_links: list[CaseLink] | None = None,
 ) -> dict:
     body = [
         {
@@ -98,18 +135,9 @@ def _build_adaptive_card(
         "body": body,
     }
 
-    if articles:
-        actions = [
-            {
-                "type": "Action.OpenUrl",
-                "title": _article_button_title(article),
-                "url": article.url,
-            }
-            for article in articles[:REFERENCE_ARTICLE_LIMIT]
-            if article.url
-        ]
-        if actions:
-            card["actions"] = actions
+    actions = _card_link_actions(articles, case_links)
+    if actions:
+        card["actions"] = actions
 
     return card
 
@@ -157,6 +185,7 @@ def send_hr_newsletter_to_teams(
     subject: str,
     today: date,
     articles: list[HRArticle] | None = None,
+    case_links: list[CaseLink] | None = None,
 ) -> None:
     webhook_urls = get_hr_webhook_urls()
     if not webhook_urls:
@@ -176,7 +205,7 @@ def send_hr_newsletter_to_teams(
     if webhook_format == "simple":
         payload = {"text": f"**{title}**\n_{subtitle}_\n\n{newsletter}"}
     else:
-        card = _build_adaptive_card(title, subtitle, newsletter, articles)
+        card = _build_adaptive_card(title, subtitle, newsletter, articles, case_links)
         payload = _wrap_adaptive_card(card)
         payload["title"] = title
         payload["text"] = newsletter
@@ -204,9 +233,9 @@ def main() -> int:
     logger.info("HR newsletter date (Taiwan): %s", today.isoformat())
 
     try:
-        newsletter, subject, articles = generate_hr_newsletter(today)
+        newsletter, subject, articles, case_links = generate_hr_newsletter(today)
         logger.info("Sources used: %s", ", ".join(article.source for article in articles))
-        send_hr_newsletter_to_teams(newsletter, subject, today, articles)
+        send_hr_newsletter_to_teams(newsletter, subject, today, articles, case_links)
         return 0
     except Exception:
         logger.exception("HR newsletter failed")
