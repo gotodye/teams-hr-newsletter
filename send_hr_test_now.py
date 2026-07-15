@@ -18,7 +18,7 @@ if sys.platform == "win32":
             stream.reconfigure(encoding="utf-8")
 
 from hr_main import get_hr_webhook_urls, get_today, send_hr_newsletter_to_teams
-from hr_newsletter import generate_hr_newsletter
+from hr_newsletter import CaseLink, generate_hr_newsletter
 from hr_sources import HRArticle
 
 TZ_TAIWAN = ZoneInfo("Asia/Taipei")
@@ -44,6 +44,19 @@ SAMPLE_ARTICLES = [
     ),
 ]
 
+SAMPLE_CASE_LINKS = [
+    CaseLink(
+        region="國內",
+        title="Prevent Team Friction from Turning into Dysfunction",
+        url="https://hbr.org/2026/06/prevent-team-friction-from-turning-into-dysfunction",
+    ),
+    CaseLink(
+        region="國外",
+        title="3 Forces Are Redefining the Transition from Manager to Leader",
+        url="https://hbr.org/2026/06/3-forces-are-redefining-the-transition-from-manager-to-leader",
+    ),
+]
+
 SAMPLE_NEWSLETTER = """主旨：【HR 戰略快報】主管斷層 ✕ 守住團隊韌性與人效
 
 1. 全球/社群觀測（What）
@@ -54,6 +67,9 @@ HBR 近期連發研究指出，主管邁向領導者的轉型正面臨 AI 治理
 
 3. 我們的行動對策（Actionable Advice）
 建議我們公司可以嘗試：為高潛主管設計「AI 時代領導轉型工作坊」，聚焦決策授權與跨文化協作。我正帶領團隊規劃「團隊摩擦健檢」機制，透過季度 360° 即時回饋，將衝突轉化為創新動能。
+【案例參考】
+· 國內｜某科技業導入季度 friction review，將團隊衝突事件下降 30%，留任率回升。
+· 國外｜HBR 研究指出，頂尖團隊以「建設性摩擦」取代零衝突，創新提案數顯著成長。
 
 ---
 📌 今日參考來源（僅列文章標題，勿輸出網址）：
@@ -79,26 +95,30 @@ def main() -> int:
     api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("GEMINI_API_KEY")
 
     articles: list[HRArticle] = SAMPLE_ARTICLES
+    case_links: list[CaseLink] = SAMPLE_CASE_LINKS
 
     if use_ai and api_key:
         print("Generating live HR newsletter with AI...")
         try:
-            newsletter, subject, articles = generate_hr_newsletter(today)
+            newsletter, subject, articles, case_links = generate_hr_newsletter(today)
             print(f"Sources: {', '.join(a.source for a in articles)}")
+            print(f"Case links: {len(case_links)}")
         except Exception as exc:
             print(f"AI failed ({exc}), using sample newsletter.")
             newsletter = SAMPLE_NEWSLETTER
             subject = "【HR 戰略快報】主管斷層 ✕ 守住團隊韌性與人效"
             articles = SAMPLE_ARTICLES
+            case_links = SAMPLE_CASE_LINKS
     else:
         print("Sending sample HR newsletter (set USE_AI=true + OPENAI_API_KEY for live AI).")
         newsletter = SAMPLE_NEWSLETTER
         subject = "【HR 戰略快報】主管斷層 ✕ 守住團隊韌性與人效"
         articles = SAMPLE_ARTICLES
+        case_links = SAMPLE_CASE_LINKS
 
     print("Sending to Teams...")
     try:
-        send_hr_newsletter_to_teams(newsletter, subject, today, articles)
+        send_hr_newsletter_to_teams(newsletter, subject, today, articles, case_links)
         print("SUCCESS — check Teams chat with Flow bot.")
         return 0
     except Exception as exc:
