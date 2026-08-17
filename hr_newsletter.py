@@ -38,6 +38,21 @@ _CASE_LINK_LINE = re.compile(
     r"^(國內|國外)[｜|](.+?)[｜|](https?://\S+)\s*$",
     re.MULTILINE,
 )
+_REFERENCE_SECTION = re.compile(
+    r"(?:\n---\s*)?\n📌\s*今日參考來源[^\n]*\n.*",
+    re.DOTALL,
+)
+
+DOMESTIC_SOURCES = frozenset({"Google News 台灣", "Google News 經理人"})
+INTL_SOURCES = frozenset(
+    {
+        "Josh Bersin",
+        "McKinsey Insights",
+        "HR Dive",
+        "Google News HR",
+        "Google News HBR",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -119,11 +134,89 @@ def _remove_case_links_block(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
+def _strip_reference_section(text: str) -> str:
+    return _REFERENCE_SECTION.sub("", text).rstrip()
+
+
+def _build_reference_section(articles: list[HRArticle]) -> str:
+    if not articles:
+        return ""
+    lines = _format_source_ref_lines(articles)
+    return f"\n\n---\n📌 今日參考來源：\n{lines}"
+
+
+def _ensure_reference_section(body: str, articles: list[HRArticle]) -> str:
+    body = _strip_reference_section(body)
+    return body + _build_reference_section(articles)
+
+
+def _pick_article(
+    articles: list[HRArticle],
+    sources: frozenset[str],
+    exclude_urls: set[str],
+) -> HRArticle | None:
+    for article in articles:
+        if article.source in sources and article.url not in exclude_urls:
+            return article
+    return None
+
+
+def _pick_domestic_article(
+    articles: list[HRArticle],
+    exclude_urls: set[str],
+) -> HRArticle | None:
+    article = _pick_article(articles, DOMESTIC_SOURCES, exclude_urls)
+    if article:
+        return article
+    for article in articles:
+        if article.url in exclude_urls:
+            continue
+        if re.search(r"[\u4e00-\u9fff]", article.title):
+            return article
+    return None
+
+
+def _pick_intl_article(
+    articles: list[HRArticle],
+    exclude_urls: set[str],
+) -> HRArticle | None:
+    return _pick_article(articles, INTL_SOURCES, exclude_urls)
+
+
+def _fallback_case_links(
+    articles: list[HRArticle],
+    existing: list[CaseLink],
+) -> list[CaseLink]:
+    if len(existing) >= CASE_LINK_LIMIT or not articles:
+        return existing
+
+    result = list(existing)
+    used_urls = {case.url for case in result}
+    regions = {case.region for case in result}
+
+    if "國內" not in regions:
+        domestic = _pick_domestic_article(articles, used_urls)
+        if domestic:
+            result.append(
+                CaseLink(region="國內", title=domestic.title, url=domestic.url)
+            )
+            used_urls.add(domestic.url)
+
+    if len(result) < CASE_LINK_LIMIT and "國外" not in regions:
+        intl = _pick_intl_article(articles, used_urls)
+        if intl:
+            result.append(CaseLink(region="國外", title=intl.title, url=intl.url))
+
+    return result[:CASE_LINK_LIMIT]
+
+
 def finalize_newsletter(raw: str, articles: list[HRArticle]) -> tuple[str, list[CaseLink]]:
-    """Strip machine-readable link blocks and accidental URLs from newsletter body."""
+    """Strip machine-readable link blocks and ensure reference links are present."""
     case_links = _parse_case_links(raw, articles)
     body = _remove_case_links_block(raw)
     body = _strip_raw_urls(body)
+    case_links = _fallback_case_links(articles, case_links)
+    body = _ensure_reference_section(body, articles)
     return body, case_links
 
 
@@ -161,7 +254,6 @@ def focus_theme_for_date(today: date) -> str:
 
 
 def _build_user_prompt(today: date, source_block: str, articles: list[HRArticle]) -> str:
-    source_ref_lines = _format_source_ref_lines(articles)
     theme_lines = "\n".join(f"- {theme}" for theme in STRATEGIC_THEMES)
     focus_theme = focus_theme_for_date(today)
     weekly_cap_note = (
@@ -204,11 +296,9 @@ def _build_user_prompt(today: date, source_block: str, articles: list[HRArticle]
 CASE_LINKS:
 國內｜[案例來源文章標題]｜[必須從上方素材複製的完整 URL]
 國外｜[案例來源文章標題]｜[必須從上方素材複製的完整 URL]
-（CASE_LINKS 區塊由系統轉為 Teams 按鈕，勿出現在正文）
+（CASE_LINKS 區塊由系統轉為 Teams 按鈕，勿出現在正文；若未提供，系統會自動從素材補上）
 
----
-📌 今日參考來源（僅列文章標題，勿輸出網址或 feed 名稱如 Google News HR）：
-{source_ref_lines}
+（📌 今日參考來源區塊由系統自動附加，AI 無需輸出）
 """
 
 
