@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
@@ -17,15 +18,25 @@ logger = logging.getLogger(__name__)
 
 TZ_TAIWAN = ZoneInfo("Asia/Taipei")
 DEFAULT_LOOKBACK_HOURS = 48
+EXTENDED_LOOKBACK_HOURS = 168  # 7 days — fallback when default window yields nothing
 
 HR_FEEDS: dict[str, str] = {
     "Josh Bersin": "https://joshbersin.com/feed/",
-    "HBR Leadership": "https://hbr.org/topic/subject/leadership.rss",
-    "McKinsey People": "https://www.mckinsey.com/featured-insights/rss",
-    "經理人": "https://www.managertoday.com.tw/rss",
+    "McKinsey Insights": "https://www.mckinsey.com/insights/rss",
+    "HR Dive": "https://www.hrdive.com/feeds/news/",
 }
 
 HR_TOPIC_FEEDS: dict[str, str] = {
+    "Google News HBR": (
+        "https://news.google.com/rss/search?"
+        "q=site:hbr.org+leadership+OR+workplace+OR+employee+when:7d"
+        "&hl=en-US&gl=US&ceid=US:en"
+    ),
+    "Google News 經理人": (
+        "https://news.google.com/rss/search?"
+        "q=site:managertoday.com.tw+when:7d"
+        "&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+    ),
     "Google News HR": (
         "https://news.google.com/rss/search?"
         "q=human+resources+OR+workplace+culture+OR+leadership+OR+employer+brand"
@@ -42,8 +53,25 @@ HR_TOPIC_FEEDS: dict[str, str] = {
     ),
 }
 
+# Blog-style feeds publish less frequently — allow a longer window per source.
+FEED_LOOKBACK_HOURS: dict[str, int] = {
+    "Josh Bersin": 168,
+    "McKinsey Insights": 168,
+    "HR Dive": 96,
+    "Google News HBR": 168,
+    "Google News 經理人": 168,
+}
 
-NEWS_AGGREGATOR_SOURCES = frozenset({"Google News HR", "Google News 台灣"})
+NEWS_AGGREGATOR_SOURCES = frozenset(
+    {
+        "Google News HR",
+        "Google News 台灣",
+        "Google News HBR",
+        "Google News 經理人",
+    }
+)
+
+_RETRYABLE_HTTP = frozenset({429, 502, 503, 504})
 
 # All feeds — admin, compliance, or clearly off-topic for CHRO briefings.
 GLOBAL_TITLE_EXCLUDE: tuple[str, ...] = (
@@ -116,13 +144,33 @@ def _strip_html(text: str) -> str:
 
 
 def _fetch_rss(url: str, source: str) -> list[HRArticle]:
-    response = requests.get(
-        url,
-        timeout=20,
-        headers={"User-Agent": "teams-hr-newsletter/1.0"},
-    )
-    response.raise_for_status()
-    root = ElementTree.fromstring(response.content)
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            response = requests.get(
+                url,
+                timeout=20,
+                headers={"User-Agent": "teams-hr-newsletter/1.0"},
+            )
+            response.raise_for_status()
+            return _parse_rss_content(response.content, source)
+        except requests.HTTPError as exc:
+            last_error = exc
+            status = exc.response.status_code if exc.response is not None else None
+            if status in _RETRYABLE_HTTP and attempt < 2:
+                time.sleep(2**attempt)
+                continue
+            raise
+        except Exception as exc:
+            last_error = exc
+            raise
+    if last_error:
+        raise last_error
+    return []
+
+
+def _parse_rss_content(content: bytes, source: str) -> list[HRArticle]:
+    root = ElementTree.fromstring(content)
     channel = root.find("channel")
     if channel is None:
         return []
@@ -207,23 +255,56 @@ def _dedupe_articles(articles: Iterable[HRArticle]) -> list[HRArticle]:
     return unique
 
 
-def fetch_hr_articles(
-    lookback_hours: int = DEFAULT_LOOKBACK_HOURS,
-    limit: int = 8,
+def _collect_articles(
+    lookback_hours: int,
+    per_feed_lookback: dict[str, int] | None = None,
 ) -> list[HRArticle]:
-    """Return recent HR-relevant articles from configured feeds."""
-    cutoff = datetime.now(TZ_TAIWAN) - timedelta(hours=lookback_hours)
+    """Fetch and filter articles using per-source lookback windows."""
+    per_feed_lookback = per_feed_lookback or {}
+    now = datetime.now(TZ_TAIWAN)
     collected: list[HRArticle] = []
 
     for source, feed_url in {**HR_FEEDS, **HR_TOPIC_FEEDS}.items():
+        source_hours = per_feed_lookback.get(source, lookback_hours)
+        cutoff = now - timedelta(hours=source_hours)
         try:
             fetched = _fetch_rss(feed_url, source)
             recent = [item for item in fetched if _within_lookback(item, cutoff)]
             recent = _filter_by_title(recent, source)
             collected.extend(recent)
-            logger.info("Kept %s items from %s after title filter", len(recent), source)
+            logger.info(
+                "Kept %s items from %s after title filter (lookback %sh)",
+                len(recent),
+                source,
+                source_hours,
+            )
         except Exception:
             logger.warning("Failed to fetch feed: %s", source, exc_info=True)
+
+    return collected
+
+
+def fetch_hr_articles(
+    lookback_hours: int = DEFAULT_LOOKBACK_HOURS,
+    limit: int = 8,
+) -> list[HRArticle]:
+    """Return recent HR-relevant articles from configured feeds."""
+    per_feed_lookback = {
+        source: FEED_LOOKBACK_HOURS.get(source, lookback_hours)
+        for source in {**HR_FEEDS, **HR_TOPIC_FEEDS}
+    }
+    collected = _collect_articles(lookback_hours, per_feed_lookback)
+
+    if not collected:
+        logger.warning(
+            "No articles in default lookback; retrying with %sh window",
+            EXTENDED_LOOKBACK_HOURS,
+        )
+        extended = {
+            source: max(hours, EXTENDED_LOOKBACK_HOURS)
+            for source, hours in per_feed_lookback.items()
+        }
+        collected = _collect_articles(EXTENDED_LOOKBACK_HOURS, extended)
 
     articles = _dedupe_articles(collected)[:limit]
     logger.info("Selected %s HR articles for newsletter", len(articles))
