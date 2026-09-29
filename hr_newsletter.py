@@ -17,16 +17,62 @@ logger = logging.getLogger(__name__)
 # Must match adaptive-card button count in hr_main.py
 REFERENCE_ARTICLE_LIMIT = 3
 
-STRATEGIC_THEMES: tuple[str, ...] = (
-    "打造雇主品牌",
-    "增加員工滿意度",
-    "建構員工安全（心理安全、職場安全感，非單純法規合規）",
+# Long-term company pillars — lightly echo at most one; never the sole daily topic.
+STRATEGIC_PILLARS: tuple[str, ...] = (
+    "雇主品牌",
+    "員工滿意度",
+    "員工安全（心理安全與可發聲文化，非法規合規）",
 )
 
-MAX_THEME_USES_PER_WEEK = 2
-COMPOSITE_WEEKLY_FOCUS = (
-    "綜合三項戰略主題（雇主品牌、員工滿意度、員工安全均衡帶入）"
+# Daily CHRO angles — rotate so the same focus is not reused within 7 days.
+DAILY_THEMES: tuple[str, ...] = (
+    "人才密度與關鍵職能缺口",
+    "中階主管能力與授權",
+    "AI 對工作設計、人效與組織結構的影響",
+    "績效與回饋制度",
+    "組織設計、跨部門協作與決策速度",
+    "高潛人才與接班",
+    "薪酬哲學與內部公平（策略層，非算薪作業）",
+    "混合工作與現場／遠端節奏",
+    "招募漏斗與雇主品牌的交付面（體驗與速度，非口號）",
+    "文化落地與行為改變",
 )
+
+THEME_LOOKBACK_DAYS = 7
+MAX_THEME_USES_IN_WINDOW = 1
+
+_THEME_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "人才密度與關鍵職能缺口": (
+        "skill", "workforce", "talent density", "capability", "職能", "人才缺口", "關鍵人才",
+    ),
+    "中階主管能力與授權": (
+        "manager", "middle manager", "span of control", "empower", "主管", "授權", "中階",
+    ),
+    "AI 對工作設計、人效與組織結構的影響": (
+        "generative ai", "automation", "ai job", "人效", "工作設計", "自動化",
+    ),
+    "績效與回饋制度": (
+        "performance management", "feedback", "okrs", "績效", "回饋",
+    ),
+    "組織設計、跨部門協作與決策速度": (
+        "org design", "organization design", "silo", "decision", "組織設計", "跨部門", "決策",
+    ),
+    "高潛人才與接班": (
+        "succession", "high potential", "hi-po", "接班", "高潛",
+    ),
+    "薪酬哲學與內部公平（策略層，非算薪作業）": (
+        "compensation", "pay equity", "total rewards", "薪酬", "薪資哲學", "內部公平",
+    ),
+    "混合工作與現場／遠端節奏": (
+        "hybrid", "remote work", "return to office", "混合辦公", "遠端", "回辦公室",
+    ),
+    "招募漏斗與雇主品牌的交付面（體驗與速度，非口號）": (
+        "recruiting", "hiring", "employer brand", "candidate experience", "招募", "徵才", "雇主品牌",
+    ),
+    "文化落地與行為改變": (
+        "culture", "psychological safety", "engagement", "文化", "心理安全", "行為",
+    ),
+}
 
 CASE_LINK_LIMIT = 2  # 國內 + 國外
 
@@ -70,8 +116,9 @@ CHRO_SYSTEM_PROMPT = """你是一位具備 20 年以上經驗、擁有國際視�
 - 正文（不含主旨、連結區與 CASE_LINKS）控制在 400-480 字
 - 語氣專業、策略導向、溫和但具穿透力
 - 絕對不要提及考勤、勞健保、薪資申報等行政瑣事
-- 融入重視人才、新世代即時回饋、心理安全感、人效 ROI 等觀念
-- 內容需呼應公司 HR 戰略主題：雇主品牌、員工滿意度、員工安全
+- 緊扣「今日切入角度」與當日素材；勿每天套用同一組話術
+- 心理安全感、即時回饋、人效 ROI、雇主品牌僅在與今日角度相關時使用，不必全寫
+- 公司長期支柱（雇主品牌、員工滿意度、員工安全）最多輕點一項，勿寫成全文主軸
 - 使用繁體中文
 """
 
@@ -220,73 +267,85 @@ def finalize_newsletter(raw: str, articles: list[HRArticle]) -> tuple[str, list[
     return body, case_links
 
 
-def _week_start_monday(today: date) -> date:
-    return today - timedelta(days=today.weekday())
+def _calendar_theme(day: date) -> str:
+    return DAILY_THEMES[day.toordinal() % len(DAILY_THEMES)]
 
 
-def _pick_theme_for_day(day: date, usage: dict[str, int]) -> str | None:
-    """Pick a theme that has not exceeded the weekly cap, or None if all are capped."""
-    start = (day.toordinal() + day.weekday()) % len(STRATEGIC_THEMES)
-    for offset in range(len(STRATEGIC_THEMES)):
-        theme = STRATEGIC_THEMES[(start + offset) % len(STRATEGIC_THEMES)]
-        if usage[theme] < MAX_THEME_USES_PER_WEEK:
-            return theme
-    return None
+def _recent_calendar_themes(today: date) -> set[str]:
+    used: set[str] = set()
+    for offset in range(1, THEME_LOOKBACK_DAYS):
+        used.add(_calendar_theme(today - timedelta(days=offset)))
+    return used
 
 
-def _theme_usage_before(today: date) -> dict[str, int]:
-    """Count how many times each theme was the daily focus earlier this week."""
-    usage = {theme: 0 for theme in STRATEGIC_THEMES}
-    week_start = _week_start_monday(today)
-    for offset in range((today - week_start).days):
-        day = week_start + timedelta(days=offset)
-        theme = _pick_theme_for_day(day, usage)
-        if theme:
-            usage[theme] += 1
-    return usage
+def _score_theme(theme: str, articles: list[HRArticle]) -> int:
+    keywords = _THEME_KEYWORDS.get(theme, ())
+    if not keywords or not articles:
+        return 0
+    score = 0
+    for article in articles:
+        haystack = f"{article.title} {article.summary}".lower()
+        for keyword in keywords:
+            if keyword.lower() in haystack:
+                score += 1
+                break
+    return score
 
 
-def focus_theme_for_date(today: date) -> str:
-    """Return today's focus theme; each theme appears at most twice per ISO week."""
-    usage = _theme_usage_before(today)
-    theme = _pick_theme_for_day(today, usage)
-    return theme if theme else COMPOSITE_WEEKLY_FOCUS
+def focus_theme_for_date(
+    today: date,
+    articles: list[HRArticle] | None = None,
+) -> str:
+    """Pick today's angle; the same theme is used at most once in any 7-day window."""
+    blocked = _recent_calendar_themes(today)
+    calendar = _calendar_theme(today)
+    if not articles:
+        return calendar
+
+    ranked = sorted(
+        (
+            (theme, _score_theme(theme, articles))
+            for theme in DAILY_THEMES
+            if theme not in blocked
+        ),
+        key=lambda row: row[1],
+        reverse=True,
+    )
+    if ranked and ranked[0][1] > 0:
+        return ranked[0][0]
+    return calendar if calendar not in blocked else ranked[0][0]
 
 
 def _build_user_prompt(today: date, source_block: str, articles: list[HRArticle]) -> str:
-    theme_lines = "\n".join(f"- {theme}" for theme in STRATEGIC_THEMES)
-    focus_theme = focus_theme_for_date(today)
-    weekly_cap_note = (
-        f"- 同一戰略主題每週最多作為「今日切入角度」{MAX_THEME_USES_PER_WEEK} 次；"
-        f"若今日為綜合角度，請三項均衡帶入，勿偏重單一主題"
-        if focus_theme == COMPOSITE_WEEKLY_FOCUS
-        else f"- 同一戰略主題每週最多作為「今日切入角度」{MAX_THEME_USES_PER_WEEK} 次"
-    )
+    pillar_lines = "\n".join(f"- {pillar}" for pillar in STRATEGIC_PILLARS)
+    focus_theme = focus_theme_for_date(today, articles)
 
     return f"""今日日期：{today.isoformat()}
 
 以下是系統抓取的全球 HR / 管理媒體與社群趨勢素材：
 {source_block}
 
-公司長期 HR 戰略主題（請在洞察與對策中呼應，至少連結其中一項）：
-{theme_lines}
-今日建議切入角度：{focus_theme}
-{weekly_cap_note}
+公司長期 HR 支柱（全文最多輕點一項，勿當主軸）：
+{pillar_lines}
+今日切入角度（必須作為主軸，勿改寫成滿意度／心理安全／雇主品牌套話）：{focus_theme}
+- 同一切入角度 {THEME_LOOKBACK_DAYS} 天內最多使用 {MAX_THEME_USES_IN_WINDOW} 次
+- What 段須點到上方實際素材中的 1-2 則（用標題或現象，勿寫網址）
+- 案例的產業或做法須貼近今日角度；避免反覆使用同一間公司或同一套 DEI／心理安全故事
 
 請嚴格依照以下格式輸出（不要加任何前言或結語）：
 - 連結將由系統以 Teams 按鈕呈現，請勿在本文輸出任何 http/https 網址
-- 「員工安全」指心理安全、信任與可發聲的職場環境，勿寫成勞檢或工安罰則新聞
+- 「員工安全」若出現，僅指心理安全與可發聲文化，勿寫成勞檢或工安罰則
 
 主旨：【HR 戰略快報】[今日痛點關鍵字] ✕ [預期帶來的商業效益]
 
 1. 全球/社群觀測（What）
-[2-3 句話，專業客觀，具經營者高度]
+[2-3 句話，專業客觀，具經營者高度；緊扣今日素材與切入角度]
 
 2. 商業本質洞察（Why）
-[戰略高度點破管理本質，溫和堅定融入新世代管理觀念]
+[點破與今日角度相關的管理本質，勿套用與角度無關的新世代口號]
 
 3. 我們的行動對策（Actionable Advice）
-[1-2 點尚未執行的建議方案；以「建議方案：…」或「建議我們可評估／試行…」開頭。
+[1-2 點尚未執行、且對應今日角度的建議方案；以「建議方案：…」或「建議我們可評估／試行…」開頭。
 勿寫成已在進行或已完成的口吻（避免「我正帶領」「我們已導入」「正在推動」等）]
 【案例參考】
 （標題僅輸出「【案例參考】」四字，勿附帶括號說明；其下國內／國外各 1 則，每則 1-2 句：公司/組織＋做法＋可借鑑成效，勿寫網址）
@@ -321,7 +380,7 @@ def _call_openai(prompt: str) -> str:
                 {"role": "user", "content": prompt},
             ],
             "max_tokens": 900,
-            "temperature": 0.7,
+            "temperature": 0.8,
         },
         timeout=60,
     )
@@ -351,7 +410,7 @@ def _extract_gemini_text(data: dict) -> str:
 def _gemini_generation_config() -> dict:
     model = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
     config: dict = {
-        "temperature": 0.7,
+        "temperature": 0.8,
         "maxOutputTokens": 2048,
     }
     # thinkingConfig is only valid on Gemini 3.x; omit for 2.x to avoid 400 errors.
@@ -408,8 +467,9 @@ def generate_hr_newsletter(today: date) -> tuple[str, str, list[HRArticle], list
     newsletter, case_links = finalize_newsletter(raw, articles)
     subject = _extract_subject(newsletter)
     logger.info(
-        "HR newsletter generated (%s chars, %s case links)",
+        "HR newsletter generated (%s chars, %s case links, theme=%s)",
         len(newsletter),
         len(case_links),
+        focus_theme_for_date(today, articles),
     )
     return newsletter, subject, articles, case_links
