@@ -423,15 +423,37 @@ def _call_gemini(prompt: str) -> str:
         f"{model}:generateContent?key={api_key}"
     )
     combined = f"{NEWSLETTER_SYSTEM_PROMPT}\n\n{prompt}"
-    response = requests.post(
-        url,
-        headers={"Content-Type": "application/json"},
-        json={
-            "contents": [{"parts": [{"text": combined}]}],
-            "generationConfig": _gemini_generation_config(),
-        },
-        timeout=60,
-    )
+
+    def _post(generation_config: dict) -> requests.Response:
+        return requests.post(
+            url,
+            headers={"Content-Type": "application/json"},
+            json={
+                "contents": [{"parts": [{"text": combined}]}],
+                "generationConfig": generation_config,
+            },
+            timeout=60,
+        )
+
+    config = _gemini_generation_config()
+    response = _post(config)
+
+    # Some models (e.g. gemini-3.8-flash) reject thinkingConfig/thinkingLevel
+    # with HTTP 400; retry once without it so changing GEMINI_MODEL never
+    # silently breaks the daily send.
+    if (
+        response.status_code == 400
+        and "thinking" in response.text.lower()
+        and "thinkingConfig" in config
+    ):
+        logger.warning(
+            "Gemini rejected thinkingConfig for model %s; retrying without it (%s)",
+            model,
+            response.text[:200],
+        )
+        config = {k: v for k, v in config.items() if k != "thinkingConfig"}
+        response = _post(config)
+
     if not response.ok:
         logger.error("Gemini API error %s: %s", response.status_code, response.text[:500])
         response.raise_for_status()
