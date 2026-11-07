@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Iterable
+from urllib.parse import quote
 from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
 
@@ -19,6 +20,23 @@ logger = logging.getLogger(__name__)
 TZ_TAIWAN = ZoneInfo("Asia/Taipei")
 DEFAULT_LOOKBACK_HOURS = 48
 EXTENDED_LOOKBACK_HOURS = 168  # 7 days — fallback when default window yields nothing
+
+
+def _google_news_zh_tw(terms: tuple[str, ...], when: str = "2d") -> str:
+    """Build a Google News zh-TW RSS search URL from plain keywords."""
+    query = "+OR+".join(quote(term) for term in terms) + f"+when:{when}"
+    return (
+        f"https://news.google.com/rss/search?q={query}"
+        "&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+    )
+
+
+# HR 專業 + 通用管理／領導能力關鍵字（兩者並重）。
+TW_SEARCH_TERMS: tuple[str, ...] = (
+    "人資", "人才", "接班", "組織", "人效", "主管",
+    "領導", "溝通", "決策", "團隊", "教練", "管理", "向上管理",
+    "AI工作", "雇主品牌", "招募", "心理安全",
+)
 
 HR_FEEDS: dict[str, str] = {
     "Josh Bersin": "https://joshbersin.com/feed/",
@@ -39,19 +57,13 @@ HR_TOPIC_FEEDS: dict[str, str] = {
     ),
     "Google News HR": (
         "https://news.google.com/rss/search?"
-        "q=workforce+planning+OR+skills+gap+OR+manager+leadership+OR+org+design"
-        "+OR+hybrid+work+OR+succession+OR+AI+jobs+OR+compensation+strategy"
-        "+OR+employer+brand+OR+employee+engagement+when:2d"
+        "q=workforce+planning+OR+skills+gap+OR+manager+coaching+OR+leadership+development"
+        "+OR+org+design+OR+decision+making+OR+delegation+OR+feedback+culture"
+        "+OR+succession+OR+AI+at+work+OR+employer+brand+OR+employee+engagement"
+        "+OR+psychological+safety+when:2d"
         "&hl=en-US&gl=US&ceid=US:en"
     ),
-    "Google News 台灣": (
-        "https://news.google.com/rss/search?"
-        "q=%E4%BA%BA%E8%B3%87+OR+%E4%BA%BA%E6%89%8D+OR+%E6%8E%A5%E7%8F%AD+OR+%E7%B5%84%E7%B9%94"
-        "+OR+%E4%BA%BA%E6%95%88+OR+%E4%B8%BB%E7%AE%A1+OR+AI+%E5%B7%A5%E4%BD%9C"
-        "+OR+%E9%9B%87%E4%B8%BB%E5%93%81%E7%89%8C+OR+%E5%8B%9F%E9%9B%86"
-        "+OR+%E5%BF%83%E7%90%86%E5%AE%89%E5%85%A8+when:2d"
-        "&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-    ),
+    "Google News 台灣": _google_news_zh_tw(TW_SEARCH_TERMS),
 }
 
 # Blog-style feeds publish less frequently — allow a longer window per source.

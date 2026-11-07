@@ -1,13 +1,13 @@
-# HR 戰略決策快報
+# HR ✕ 管理新知
 
-每日 **06:00（台灣時間）** 由 **Power Automate 排程**觸發，自動抓取 HBR、Josh Bersin、McKinsey 等來源，生成 CHRO 風格快報（350–400 字），透過 **Power Automate** 發送至 Microsoft Teams **私訊**。
+每日 **06:00（台灣時間）** 由 **Power Automate 排程**觸發，自動抓取 HBR、Josh Bersin、McKinsey、經理人 等來源，生成一封**學習型「HR ✕ 管理新知」**（380–460 字，涵蓋人資專業與管理／領導能力），透過 **Power Automate** 發送至 Microsoft Teams **私訊**。
 
 > 晨間推播機器人已獨立至 [teams-morning-bot](https://github.com/gotodye/teams-morning-bot)。
 
 ## 功能
 
-- 抓取全球 HR / 領導力媒體 RSS（近 48 小時）
-- AI 生成三段式 CHRO 快報（預設 Gemini）
+- 抓取全球 HR / 管理 / 領導力媒體 RSS（近 48 小時）
+- AI 生成學習型新知（📈 今日新知 / 💡 為什麼重要 / 🎯 帶走的重點，預設 Gemini）
 - 透過 Power Automate Adaptive Card 發送至指定收件人
 - **Power Automate 06:00 準時觸發**（不依賴 GitHub cron）
 - GitHub Actions 手動觸發仍可用
@@ -17,7 +17,7 @@
 ```
 teams-hr-newsletter/
 ├── hr_main.py                 # 主程式（生成 + 發送）
-├── hr_newsletter.py           # CHRO 快報 AI 生成
+├── hr_newsletter.py           # 新知內文 AI 生成（題庫 / prompt / 案例解析）
 ├── hr_sources.py              # RSS 來源抓取
 ├── send_hr_test_now.py        # 立即測試發送
 ├── docs/hr_teams_dm_setup.md      # Power Automate 私訊設定

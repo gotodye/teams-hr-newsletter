@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""每日 HR 戰略決策快報 — 自動生成並發送至 Microsoft Teams。"""
+"""每日 HR ✕ 管理新知 — 自動生成並發送至 Microsoft Teams。"""
 
 from __future__ import annotations
 
@@ -194,8 +194,8 @@ def send_hr_newsletter_to_teams(
             "不可使用 TEAMS_WEBHOOK_URL（頻道），否則會誤發到群組頻道。"
         )
 
-    title = subject if subject.startswith("【") else f"【HR 戰略快報】{subject}"
-    subtitle = today.strftime("%Y年%m月%d日 · CHRO 每日戰略決策快報")
+    title = subject if subject.startswith("【") else f"【HR ✕ 管理新知】{subject}"
+    subtitle = today.strftime("%Y年%m月%d日 · 每日 HR 與管理能力新知")
 
     if os.environ.get("DRY_RUN", "").lower() == "true":
         logger.info("DRY_RUN — 不發送 Teams\n%s", newsletter)
