@@ -35,7 +35,7 @@ def main() -> int:
         "body": [
             {
                 "type": "TextBlock",
-                "text": "【HR 戰略快報】Webhook 測試",
+                "text": "【HR ✕ 管理新知】Webhook 測試",
                 "weight": "Bolder",
                 "size": "Large",
                 "wrap": True,
@@ -51,7 +51,7 @@ def main() -> int:
 
     payload = {
         "type": "message",
-        "title": "【HR 戰略快報】Webhook 測試",
+        "title": "【HR ✕ 管理新知】Webhook 測試",
         "text": "測試訊息",
         "subtitle": "連線測試",
         "card": card,
