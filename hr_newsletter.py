@@ -17,25 +17,19 @@ logger = logging.getLogger(__name__)
 # Must match adaptive-card button count in hr_main.py
 REFERENCE_ARTICLE_LIMIT = 3
 
-# Long-term company pillars — lightly echo at most one; never the sole daily topic.
-STRATEGIC_PILLARS: tuple[str, ...] = (
-    "雇主品牌",
-    "員工滿意度",
-    "員工安全（心理安全與可發聲文化，非法規合規）",
-)
-
-# Daily CHRO angles — rotate so the same focus is not reused within 7 days.
+# Daily knowledge angles — HR professional (1-5) + general management/leadership
+# capability (6-10). Rotate so the same focus is not reused within 7 days.
 DAILY_THEMES: tuple[str, ...] = (
     "人才密度與關鍵職能缺口",
-    "中階主管能力與授權",
-    "AI 對工作設計、人效與組織結構的影響",
-    "績效與回饋制度",
-    "組織設計、跨部門協作與決策速度",
-    "高潛人才與接班",
-    "薪酬哲學與內部公平（策略層，非算薪作業）",
-    "混合工作與現場／遠端節奏",
-    "招募漏斗與雇主品牌的交付面（體驗與速度，非口號）",
-    "文化落地與行為改變",
+    "招募漏斗與雇主品牌體驗",
+    "績效管理與即時回饋",
+    "薪酬哲學與內部公平（觀念，非算薪）",
+    "高潛人才辨識與接班",
+    "教練式領導與一對一對話",
+    "向上溝通、跨部門協作與影響力",
+    "決策品質、授權與課責",
+    "團隊心理安全與高效能團隊",
+    "AI 時代的工作設計、人效與個人生產力",
 )
 
 THEME_LOOKBACK_DAYS = 7
@@ -43,34 +37,35 @@ MAX_THEME_USES_IN_WINDOW = 1
 
 _THEME_KEYWORDS: dict[str, tuple[str, ...]] = {
     "人才密度與關鍵職能缺口": (
-        "skill", "workforce", "talent density", "capability", "職能", "人才缺口", "關鍵人才",
+        "skill", "workforce", "talent density", "capability", "職能", "人才缺口", "關鍵人才", "技能",
     ),
-    "中階主管能力與授權": (
-        "manager", "middle manager", "span of control", "empower", "主管", "授權", "中階",
+    "招募漏斗與雇主品牌體驗": (
+        "recruiting", "hiring", "employer brand", "candidate experience", "招募", "徵才", "雇主品牌", "面試",
     ),
-    "AI 對工作設計、人效與組織結構的影響": (
-        "generative ai", "automation", "ai job", "人效", "工作設計", "自動化",
+    "績效管理與即時回饋": (
+        "performance management", "feedback", "okrs", "goal setting", "績效", "回饋", "目標",
     ),
-    "績效與回饋制度": (
-        "performance management", "feedback", "okrs", "績效", "回饋",
+    "薪酬哲學與內部公平（觀念，非算薪）": (
+        "compensation", "pay equity", "total rewards", "薪酬", "薪資", "內部公平", "加薪",
     ),
-    "組織設計、跨部門協作與決策速度": (
-        "org design", "organization design", "silo", "decision", "組織設計", "跨部門", "決策",
+    "高潛人才辨識與接班": (
+        "succession", "high potential", "hi-po", "talent review", "接班", "高潛", "人才盤點",
     ),
-    "高潛人才與接班": (
-        "succession", "high potential", "hi-po", "接班", "高潛",
+    "教練式領導與一對一對話": (
+        "coaching", "one-on-one", "1:1", "manager", "教練", "一對一", "帶人", "主管",
     ),
-    "薪酬哲學與內部公平（策略層，非算薪作業）": (
-        "compensation", "pay equity", "total rewards", "薪酬", "薪資哲學", "內部公平",
+    "向上溝通、跨部門協作與影響力": (
+        "communication", "influence", "stakeholder", "collaboration", "cross-functional",
+        "溝通", "協作", "跨部門", "影響力", "向上管理",
     ),
-    "混合工作與現場／遠端節奏": (
-        "hybrid", "remote work", "return to office", "混合辦公", "遠端", "回辦公室",
+    "決策品質、授權與課責": (
+        "decision", "delegation", "accountability", "empower", "決策", "授權", "課責", "當責",
     ),
-    "招募漏斗與雇主品牌的交付面（體驗與速度，非口號）": (
-        "recruiting", "hiring", "employer brand", "candidate experience", "招募", "徵才", "雇主品牌",
+    "團隊心理安全與高效能團隊": (
+        "psychological safety", "team", "engagement", "trust", "心理安全", "團隊", "信任", "敬業",
     ),
-    "文化落地與行為改變": (
-        "culture", "psychological safety", "engagement", "文化", "心理安全", "行為",
+    "AI 時代的工作設計、人效與個人生產力": (
+        "generative ai", "automation", "ai job", "productivity", "人效", "工作設計", "自動化", "生產力",
     ),
 }
 
@@ -85,7 +80,7 @@ _CASE_LINK_LINE = re.compile(
     re.MULTILINE,
 )
 _REFERENCE_SECTION = re.compile(
-    r"(?:\n---\s*)?\n📌\s*今日參考來源[^\n]*\n.*",
+    r"(?:\n---\s*)?\n📌\s*今日(?:延伸閱讀|參考來源)[^\n]*\n.*",
     re.DOTALL,
 )
 
@@ -108,17 +103,18 @@ class CaseLink:
     url: str
 
 
-CHRO_SYSTEM_PROMPT = """你是一位具備 20 年以上經驗、擁有國際視野的資深戰略人資長（CHRO）。
-你正在為公司執行長撰寫每日專屬的【HR 戰略決策快報】Newsletter。
+NEWSLETTER_SYSTEM_PROMPT = """你是一位資深的 HR 與管理發展顧問，擁有國際視野。
+你每天為「想持續精進人力資源與管理能力」的專業工作者，編寫一封簡短好讀的【HR ✕ 管理新知】。
 
 寫作要求：
-- 嚴格依照指定三段式結構輸出
-- 正文（不含主旨、連結區與 CASE_LINKS）控制在 400-480 字
-- 語氣專業、策略導向、溫和但具穿透力
-- 絕對不要提及考勤、勞健保、薪資申報等行政瑣事
-- 緊扣「今日切入角度」與當日素材；勿每天套用同一組話術
-- 心理安全感、即時回饋、人效 ROI、雇主品牌僅在與今日角度相關時使用，不必全寫
-- 公司長期支柱（雇主品牌、員工滿意度、員工安全）最多輕點一項，勿寫成全文主軸
+- 定位是「每日新知／學習」，不是決策指令，也不是寫給某家公司執行長的報告
+- 嚴格依照指定結構輸出
+- 正文（不含主旨、連結區與 CASE_LINKS）控制在 380-460 字
+- 語氣中性、專業、好吸收；像一位樂於分享的前輩，而非下指令的長官
+- 緊扣「今日主題」與當日素材；勿每天套用同一組話術
+- 內容可同時涵蓋人資專業與通用管理／領導能力兩大面向
+- 絕對不要提及考勤、勞健保、薪資申報、罰則等行政或合規瑣事
+- 「心理安全」若出現，僅指可發聲、互信的團隊氛圍，勿寫成勞檢或工安
 - 使用繁體中文
 """
 
@@ -189,7 +185,7 @@ def _build_reference_section(articles: list[HRArticle]) -> str:
     if not articles:
         return ""
     lines = _format_source_ref_lines(articles)
-    return f"\n\n---\n📌 今日參考來源：\n{lines}"
+    return f"\n\n---\n📌 今日延伸閱讀：\n{lines}"
 
 
 def _ensure_reference_section(body: str, articles: list[HRArticle]) -> str:
@@ -317,7 +313,6 @@ def focus_theme_for_date(
 
 
 def _build_user_prompt(today: date, source_block: str, articles: list[HRArticle]) -> str:
-    pillar_lines = "\n".join(f"- {pillar}" for pillar in STRATEGIC_PILLARS)
     focus_theme = focus_theme_for_date(today, articles)
 
     return f"""今日日期：{today.isoformat()}
@@ -325,39 +320,37 @@ def _build_user_prompt(today: date, source_block: str, articles: list[HRArticle]
 以下是系統抓取的全球 HR / 管理媒體與社群趨勢素材：
 {source_block}
 
-公司長期 HR 支柱（全文最多輕點一項，勿當主軸）：
-{pillar_lines}
-今日切入角度（必須作為主軸，勿改寫成滿意度／心理安全／雇主品牌套話）：{focus_theme}
-- 同一切入角度 {THEME_LOOKBACK_DAYS} 天內最多使用 {MAX_THEME_USES_IN_WINDOW} 次
-- What 段須點到上方實際素材中的 1-2 則（用標題或現象，勿寫網址）
-- 案例的產業或做法須貼近今日角度；避免反覆使用同一間公司或同一套 DEI／心理安全故事
+今日主題（必須作為主軸，勿改寫成與主題無關的套話）：{focus_theme}
+- 同一主題 {THEME_LOOKBACK_DAYS} 天內最多使用 {MAX_THEME_USES_IN_WINDOW} 次
+- 「今日新知」段須點到上方實際素材中的 1-2 則（用標題或現象，勿寫網址）
+- 內容以「讀者能學到、能帶走」為目標，可涵蓋人資專業或通用管理／領導能力
+- 實作參考的產業或做法須貼近今日主題；避免反覆使用同一間公司或同一套故事
 
 請嚴格依照以下格式輸出（不要加任何前言或結語）：
 - 連結將由系統以 Teams 按鈕呈現，請勿在本文輸出任何 http/https 網址
-- 「員工安全」若出現，僅指心理安全與可發聲文化，勿寫成勞檢或工安罰則
+- 「心理安全」若出現，僅指可發聲、互信的團隊氛圍，勿寫成勞檢或工安罰則
 
-主旨：【HR 戰略快報】[今日痛點關鍵字] ✕ [預期帶來的商業效益]
+主旨：【HR ✕ 管理新知】[今日主題關鍵字] ✕ [讀者可帶走的收穫]
 
-1. 全球/社群觀測（What）
-[2-3 句話，專業客觀，具經營者高度；緊扣今日素材與切入角度]
+📈 今日新知（What）
+[2-3 句，點出今天值得知道的一則趨勢／研究／觀念，緊扣今日素材與主題]
 
-2. 商業本質洞察（Why）
-[點破與今日角度相關的管理本質，勿套用與角度無關的新世代口號]
+💡 為什麼重要（Why）
+[點破背後的 HR／管理本質，說明為什麼這對讀者的工作有意義]
 
-3. 我們的行動對策（Actionable Advice）
-[1-2 點尚未執行、且對應今日角度的建議方案；以「建議方案：…」或「建議我們可評估／試行…」開頭。
-勿寫成已在進行或已完成的口吻（避免「我正帶領」「我們已導入」「正在推動」等）]
-【案例參考】
-（標題僅輸出「【案例參考】」四字，勿附帶括號說明；其下國內／國外各 1 則，每則 1-2 句：公司/組織＋做法＋可借鑑成效，勿寫網址）
-· 國內｜[台灣或亞太企業案例]
-· 國外｜[國際企業案例]
+🎯 帶走的重點（How）
+[1-2 個讀者可以「學起來」或「明天就能試用」的具體做法或心法；以分享口吻，勿寫成對某家公司的決策指令，避免「建議貴公司／我們應」等命令句]
+【實作參考】
+（標題僅輸出「【實作參考】」五字，勿附帶括號說明；其下國內／國外各 1 則，每則 1-2 句：公司/組織＋做法＋可借鑑之處，勿寫網址）
+· 國內｜[台灣或亞太的真實做法]
+· 國外｜[國際企業的真實做法]
 
 CASE_LINKS:
-國內｜[案例來源文章標題]｜[必須從上方素材複製的完整 URL]
-國外｜[案例來源文章標題]｜[必須從上方素材複製的完整 URL]
+國內｜[來源文章標題]｜[必須從上方素材複製的完整 URL]
+國外｜[來源文章標題]｜[必須從上方素材複製的完整 URL]
 （CASE_LINKS 區塊由系統轉為 Teams 按鈕，勿出現在正文；若未提供，系統會自動從素材補上）
 
-（📌 今日參考來源區塊由系統自動附加，AI 無需輸出）
+（📌 今日延伸閱讀區塊由系統自動附加，AI 無需輸出）
 """
 
 
@@ -376,7 +369,7 @@ def _call_openai(prompt: str) -> str:
         json={
             "model": model,
             "messages": [
-                {"role": "system", "content": CHRO_SYSTEM_PROMPT},
+                {"role": "system", "content": NEWSLETTER_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
             "max_tokens": 900,
@@ -429,7 +422,7 @@ def _call_gemini(prompt: str) -> str:
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{model}:generateContent?key={api_key}"
     )
-    combined = f"{CHRO_SYSTEM_PROMPT}\n\n{prompt}"
+    combined = f"{NEWSLETTER_SYSTEM_PROMPT}\n\n{prompt}"
     response = requests.post(
         url,
         headers={"Content-Type": "application/json"},
@@ -449,7 +442,7 @@ def _extract_subject(newsletter: str) -> str:
     match = re.search(r"^主旨[：:]\s*(.+)$", newsletter, flags=re.MULTILINE)
     if match:
         return match.group(1).strip()
-    return "【HR 戰略快報】"
+    return "【HR ✕ 管理新知】"
 
 
 def generate_hr_newsletter(today: date) -> tuple[str, str, list[HRArticle], list[CaseLink]]:
@@ -460,8 +453,16 @@ def generate_hr_newsletter(today: date) -> tuple[str, str, list[HRArticle], list
 
     provider = os.environ.get("AI_PROVIDER", "gemini").lower()
     if provider == "gemini":
+        logger.info(
+            "AI generation: provider=gemini, model=%s",
+            os.environ.get("GEMINI_MODEL", "gemini-3.5-flash"),
+        )
         raw = _call_gemini(prompt)
     else:
+        logger.info(
+            "AI generation: provider=openai, model=%s",
+            os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+        )
         raw = _call_openai(prompt)
 
     newsletter, case_links = finalize_newsletter(raw, articles)
